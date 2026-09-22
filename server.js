@@ -1,5 +1,4 @@
 const express = require('express');
-const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 
@@ -7,39 +6,14 @@ const app = express();
 const PORT = 3001;
 const TOKEN = 'password';
 const LISTS_DIR = path.join(__dirname, 'lists');
+const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
 
-app.use(cors());
+fs.mkdirSync(LISTS_DIR, { recursive: true });
+
 app.use(express.json());
 
-// ============ ROOT — serve checklist UI ============
-app.get('/', (req, res) => {
-  const overridePath = path.join(__dirname, 'index_main.html');
-  const indexPath = fs.existsSync(overridePath) ? overridePath : path.join(__dirname, 'public', 'index.html');
-  let html = fs.readFileSync(indexPath, 'utf8');
-
-  // Inject refresh button before delete button
-  html = html.replace(
-    '<button class="icon-btn danger" id="delete-list-btn" title="Delete list" style="display:none">',
-    `<button class="icon-btn" id="refresh-btn" title="Refresh">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 7a6 6 0 1 0 1.1-3.5M1 2v2.5h2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <button class="icon-btn danger" id="delete-list-btn" title="Delete list" style="display:none">`
-  );
-
-  // Wire up refresh button
-  html = html.replace(
-    'init();\n  </script>',
-    `document.getElementById('refresh-btn').addEventListener('click', async () => {
-      if (activeList) { await switchList(activeList); } else { await init(); }
-    });
-    init();
-  </script>`
-  );
-
-  res.send(html);
-});
-
-app.use(express.static('public'));
+// ============ STATIC — serve built React app ============
+app.use(express.static(CLIENT_DIST));
 
 // ============ AUTH ============
 app.use((req, res, next) => {
@@ -73,17 +47,28 @@ app.delete('/list/:name', (req, res) => {
   res.json({ ok: true });
 });
 
+// All meta files at once, keyed by list name — used to build the trends chart
+// without one request per date.
+app.get('/meta', (req, res) => {
+  const files = fs.readdirSync(LISTS_DIR).filter(f => f.endsWith('.json'));
+  const result = {};
+  for (const f of files) {
+    try { result[f.replace('.json', '')] = JSON.parse(fs.readFileSync(path.join(LISTS_DIR, f), 'utf8')); }
+    catch { /* skip unreadable/corrupt meta file */ }
+  }
+  res.json(result);
+});
+
 app.get('/meta/:name', (req, res) => {
   const file = path.join(LISTS_DIR, req.params.name + '.json');
-  if (!fs.existsSync(file)) return res.json({ D: 0, A: 0, W: 0, P: 0 });
+  if (!fs.existsSync(file)) return res.json({});
   try { res.json(JSON.parse(fs.readFileSync(file, 'utf8'))); }
-  catch { res.json({ D: 0, A: 0, W: 0, P: 0 }); }
+  catch { res.json({}); }
 });
 
 app.put('/meta/:name', (req, res) => {
   const file = path.join(LISTS_DIR, req.params.name + '.json');
-  const { D = 0, A = 0, W = 0, P = 0 } = req.body;
-  fs.writeFileSync(file, JSON.stringify({ D, A, W, P }), 'utf8');
+  fs.writeFileSync(file, JSON.stringify(req.body), 'utf8');
   res.json({ ok: true });
 });
 

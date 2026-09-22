@@ -4,11 +4,12 @@
   "description": "Daily checklist app",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "cd client && npm install && npm run build",
+    "migrate:counts": "node migrate-counts.js"
   },
   "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.6",
     "express": "^5.2.1"
   }
 }
