@@ -18,100 +18,26 @@ app.use(express.json());
 // ============ STATIC — serve built React app ============
 app.use(express.static(CLIENT_DIST));
 
-// ============ GOOGLE CALENDAR (read-only OAuth) ============
-// Setup: create an OAuth "Web application" client in Google Cloud Console,
-// enable the Calendar API, add http://localhost:3001/gcal/callback as a
-// redirect URI, and save {"client_id": "...", "client_secret": "..."} to
-// data/google-credentials.json (or set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).
-// The granted refresh token is stored in data/google-token.json.
-const GCAL_CREDS_FILE = path.join(DATA_DIR, 'google-credentials.json');
-const GCAL_TOKEN_FILE = path.join(DATA_DIR, 'google-token.json');
-const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+// ============ GOOGLE CALENDAR (service account) ============
+const { google } = require('googleapis');
+const GCAL_SA_FILE = process.env.GOOGLE_SA_KEYFILE ||
+  '/home/openclaw/.openclaw/workspace/.credentials/google-service-account.json';
+const GCAL_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'wyattjoeknepp@gmail.com';
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
 
-function gcalCreds() {
-  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    return { client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET };
-  }
-  const c = readJson(GCAL_CREDS_FILE, null);
-  const web = c && (c.web || c.installed || c);
-  return web && web.client_id && web.client_secret ? web : null;
-}
-
-function gcalRedirect(req) {
-  return `${req.protocol}://${req.get('host')}/gcal/callback`;
-}
-
-async function googleToken(params) {
-  const r = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(params),
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error_description || data.error || 'token request failed');
-  return data;
-}
-
-async function gcalAccessToken() {
-  const creds = gcalCreds();
-  const tok = readJson(GCAL_TOKEN_FILE, null);
-  if (!creds || !tok || !tok.refresh_token) return null;
-  if (tok.access_token && tok.expires_at && tok.expires_at > Date.now() + 60000) return tok.access_token;
-  const fresh = await googleToken({
-    client_id: creds.client_id,
-    client_secret: creds.client_secret,
-    refresh_token: tok.refresh_token,
-    grant_type: 'refresh_token',
-  });
-  const next = { ...tok, access_token: fresh.access_token, expires_at: Date.now() + fresh.expires_in * 1000 };
-  fs.writeFileSync(GCAL_TOKEN_FILE, JSON.stringify(next), 'utf8');
-  return next.access_token;
-}
-
-// Browser redirects can't send the x-token header, so the start/callback
-// routes sit before the auth middleware; the start route checks ?token= itself.
-app.get('/gcal/start', (req, res) => {
-  if (req.query.token !== TOKEN) return res.status(401).send('Unauthorized');
-  const creds = gcalCreds();
-  if (!creds) return res.status(400).send('Missing data/google-credentials.json (see server.js)');
-  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-  url.search = new URLSearchParams({
-    client_id: creds.client_id,
-    redirect_uri: gcalRedirect(req),
-    response_type: 'code',
-    scope: GCAL_SCOPE,
-    access_type: 'offline',
-    prompt: 'consent',
-  }).toString();
-  res.redirect(url.toString());
-});
-
-app.get('/gcal/callback', async (req, res) => {
-  const creds = gcalCreds();
-  if (!creds || !req.query.code) return res.status(400).send('Authorization failed');
+function gcalClient() {
   try {
-    const t = await googleToken({
-      code: req.query.code,
-      client_id: creds.client_id,
-      client_secret: creds.client_secret,
-      redirect_uri: gcalRedirect(req),
-      grant_type: 'authorization_code',
+    const credentials = JSON.parse(fs.readFileSync(GCAL_SA_FILE, 'utf8'));
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
     });
-    const prev = readJson(GCAL_TOKEN_FILE, {});
-    fs.writeFileSync(GCAL_TOKEN_FILE, JSON.stringify({
-      refresh_token: t.refresh_token || prev.refresh_token,
-      access_token: t.access_token,
-      expires_at: Date.now() + t.expires_in * 1000,
-    }), 'utf8');
-    res.send('Google Calendar connected. You can close this tab and hit Import again.');
-  } catch (e) {
-    res.status(500).send('Authorization failed: ' + e.message);
-  }
-});
+    return google.calendar({ version: 'v3', auth });
+  } catch { return null; }
+}
 
 // ============ AUTH ============
 app.use((req, res, next) => {
@@ -186,24 +112,26 @@ app.put('/recurring', (req, res) => {
 
 // ============ CALENDAR EVENTS ============
 // GET /gcal/status, GET /gcal/events?timeMin=ISO&timeMax=ISO
-app.get('/gcal/status', async (req, res) => {
-  res.json({ configured: !!gcalCreds(), connected: !!readJson(GCAL_TOKEN_FILE, null)?.refresh_token });
+app.get('/gcal/status', (req, res) => {
+  const configured = !!gcalClient();
+  res.json({ configured, connected: configured });
 });
 
 app.get('/gcal/events', async (req, res) => {
   const { timeMin, timeMax } = req.query;
   if (!timeMin || !timeMax) return res.status(400).json({ error: 'timeMin and timeMax required' });
   try {
-    const access = await gcalAccessToken();
-    if (!access) return res.status(409).json({ error: 'not connected' });
-    const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
-    url.search = new URLSearchParams({
-      timeMin, timeMax, singleEvents: 'true', orderBy: 'startTime', maxResults: '100',
-    }).toString();
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${access}` } });
-    const data = await r.json();
-    if (!r.ok) return res.status(502).json({ error: data.error?.message || 'Google API error' });
-    res.json((data.items || [])
+    const cal = gcalClient();
+    if (!cal) return res.status(409).json({ error: 'not connected' });
+    const result = await cal.events.list({
+      calendarId: GCAL_CALENDAR_ID,
+      timeMin,
+      timeMax,
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 100,
+    });
+    res.json((result.data.items || [])
       .filter((e) => e.status !== 'cancelled')
       .map((e) => ({
         title: e.summary || '(no title)',
@@ -214,4 +142,4 @@ app.get('/gcal/events', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, '127.0.0.1', () => console.log(`Server running on port ${PORT}`));
