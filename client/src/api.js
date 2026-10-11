@@ -13,7 +13,10 @@ async function apiFetch(path, opts = {}) {
     ...opts,
     headers: { ...AUTH, ...(opts.headers || {}) },
   });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error || `${res.status} ${res.statusText}`);
+  }
   return res;
 }
 
@@ -29,5 +32,10 @@ export const api = {
       .catch(() => ({})),
   putMeta: (name, data) => apiFetch(`/meta/${enc(name)}`, { method: 'PUT', body: JSON.stringify(data) }),
   // All lists' meta at once, keyed by list name — for the trends chart.
+  getRecurring: () => apiFetch('/recurring').then((r) => r.json()),
+  putRecurring: (items) => apiFetch('/recurring', { method: 'PUT', body: JSON.stringify(items) }),
+  gcalStatus: () => apiFetch('/gcal/status').then((r) => r.json()),
+  gcalEvents: (timeMin, timeMax) =>
+    apiFetch(`/gcal/events?timeMin=${enc(timeMin)}&timeMax=${enc(timeMax)}`).then((r) => r.json()),
   getAllMeta: () => apiFetch('/meta').then((r) => r.json()),
 };

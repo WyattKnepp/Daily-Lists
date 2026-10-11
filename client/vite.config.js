@@ -9,6 +9,8 @@ export default defineConfig({
       '/lists': 'http://localhost:3001',
       '/list': 'http://localhost:3001',
       '/meta': 'http://localhost:3001',
+      '/recurring': 'http://localhost:3001',
+      '/gcal': 'http://localhost:3001',
     },
   },
 })

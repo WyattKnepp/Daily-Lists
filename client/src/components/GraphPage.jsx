@@ -16,7 +16,8 @@ const PAD_B = 22;
 const PLOT_W = CHART_W - PAD_L - PAD_R;
 const PLOT_H = CHART_H - PAD_T - PAD_B;
 
-export default function TrendsPanel({ open, lists, metaByName, onClose }) {
+export default function GraphPage({ lists, metaByName, onBack }) {
+  const [enabled, setEnabled] = useState(() => new Set(COUNT_CATEGORIES));
   const [preset, setPreset] = useState('30d');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -48,7 +49,7 @@ export default function TrendsPanel({ open, lists, metaByName, onClose }) {
 
   const series = useMemo(() => {
     if (!metaByName) return null;
-    return COUNT_CATEGORIES.map((cat) => ({
+    return COUNT_CATEGORIES.filter((cat) => enabled.has(cat)).map((cat) => ({
       key: cat,
       color: COUNT_COLORS[cat],
       values: days.map((d) => {
@@ -56,7 +57,7 @@ export default function TrendsPanel({ open, lists, metaByName, onClose }) {
         return (meta && meta[cat]) || 0;
       }),
     }));
-  }, [metaByName, days]);
+  }, [metaByName, days, enabled]);
 
   const maxVal = useMemo(() => {
     if (!series) return 1;
@@ -86,16 +87,15 @@ export default function TrendsPanel({ open, lists, metaByName, onClose }) {
   const tooltipLeftPct = hoverIndex === null ? 0 : Math.min(88, Math.max(12, (xAt(hoverIndex) / CHART_W) * 100));
 
   return (
-    <>
-      <div className={`sheet-backdrop${open ? ' open' : ''}`} onClick={onClose} />
-      <div className={`bottom-sheet trends-sheet${open ? ' open' : ''}`}>
-        <div className="counts-sheet-handle" />
-        <div className="counts-sheet-header">
-          <span className="counts-sheet-title">Trends</span>
-          <button className="counts-sheet-close" aria-label="Close" onClick={onClose}>
-            ×
-          </button>
-        </div>
+    <div className="graph-page">
+      <header className="graph-header">
+        <button className="icon-btn" aria-label="Back" onClick={onBack}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M7.5 2 3.5 6l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <h1>Graph</h1>
+      </header>
 
         <div className="trends-range-row">
           {PRESETS.map((p) => (
@@ -208,13 +208,24 @@ export default function TrendsPanel({ open, lists, metaByName, onClose }) {
 
         <div className="trends-legend">
           {COUNT_CATEGORIES.map((cat) => (
-            <div className="trends-legend-item" key={cat}>
+            <button
+              className={`trends-legend-item legend-toggle${enabled.has(cat) ? ' on' : ''}`}
+              key={cat}
+              aria-pressed={enabled.has(cat)}
+              onClick={() =>
+                setEnabled((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(cat)) next.delete(cat);
+                  else next.add(cat);
+                  return next;
+                })
+              }
+            >
               <span className="trends-legend-swatch" style={{ background: COUNT_COLORS[cat] }} />
               <span className="trends-legend-label">{cat}</span>
-            </div>
+            </button>
           ))}
         </div>
-      </div>
-    </>
+    </div>
   );
 }

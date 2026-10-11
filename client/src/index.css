@@ -225,7 +225,7 @@ h1 {
 .calendar-weekdays,
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -782,3 +782,88 @@ button.add-btn {
 
 button.add-btn:active { opacity: 0.8; transform: scale(0.96); }
 button.add-btn:disabled { opacity: 0.2; pointer-events: none; box-shadow: none; text-shadow: none; }
+
+/* ── Date nav ── */
+.date-nav { display: flex; align-items: center; gap: 6px; }
+.chevron-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 4px;
+  width: 24px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.chevron-btn:first-of-type { margin-left: 4px; }
+.chevron-btn:active { color: var(--accent); border-color: var(--accent-dim); }
+
+/* ── Recurring ── */
+.recurring-sheet { height: 70dvh; }
+.recurring-row { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.recurring-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.recurring-label { font-size: 14px; color: var(--text); }
+.day-buttons { display: flex; gap: 6px; }
+.day-btn {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+}
+.day-btn.active { border-color: var(--accent); color: var(--accent); text-shadow: var(--glow-sm); }
+.recurring-add { display: flex; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border); flex-shrink: 0; }
+
+/* ── Graph page ── */
+.graph-page { display: flex; flex-direction: column; min-height: 100dvh; }
+.graph-header { display: flex; align-items: center; gap: 12px; }
+.graph-page .trends-chart-wrap { min-height: 260px; }
+.legend-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0.4;
+}
+.legend-toggle.on { opacity: 1; border-color: var(--muted); }
+
+/* ── Header overflow menu ── */
+.icon-btn.today-btn { width: auto; padding: 0 12px; font-family: inherit; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+.menu-wrap { position: relative; margin-left: auto; }
+.menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  padding: 4px;
+  z-index: 50;
+}
+.menu-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-dropdown button:active, .menu-dropdown button.active { color: var(--accent); background: var(--bg); }
+.menu-dropdown button.danger { color: var(--danger); }

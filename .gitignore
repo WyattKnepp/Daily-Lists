@@ -5,6 +5,7 @@ client/dist/
 
 # Personal data
 lists/
+data/
 logs/
 newspaper/*.html
 newspaper/*.json
@@ -15,3 +16,6 @@ newspaper/*.md
 
 # Runtime
 *.log
+
+# Dev notes
+docs/

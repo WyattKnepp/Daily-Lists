@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
-import { parseMd, toMd, todayKey, pickDefault, parseListDate, emptyCounts } from './utils';
+import { parseMd, toMd, todayKey, pickDefault, parseListDate, emptyCounts, addDays, formatListName, recurringItems, eventLabel } from './utils';
 import Header from './components/Header';
 import CalendarPanel from './components/CalendarPanel';
 import ProgressBar from './components/ProgressBar';
 import ItemList from './components/ItemList';
 import CountsPanel from './components/CountsPanel';
-import TrendsPanel from './components/TrendsPanel';
+import GraphPage from './components/GraphPage';
+import RecurringPanel from './components/RecurringPanel';
 import AddRow from './components/AddRow';
 import Toast from './components/Toast';
 
@@ -17,7 +18,9 @@ export default function App() {
   const [counts, setCounts] = useState(emptyCounts());
   const [countsOpen, setCountsOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [trendsOpen, setTrendsOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
+  const [recurring, setRecurring] = useState([]);
+  const [recurringOpen, setRecurringOpen] = useState(false);
   const [allMeta, setAllMeta] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | no-api | no-lists
   const [newItemValue, setNewItemValue] = useState('');
@@ -71,12 +74,13 @@ export default function App() {
   }
 
   useEffect(() => {
+    api.getRecurring().then(setRecurring).catch(() => {});
     loadLists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (!trendsOpen) return;
+    if (!graphOpen) return;
     let cancelled = false;
     api
       .getAllMeta()
@@ -88,7 +92,7 @@ export default function App() {
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trendsOpen]);
+  }, [graphOpen]);
 
   useEffect(() => {
     if (justAdded.current) {
@@ -140,6 +144,61 @@ export default function App() {
     }
   }
 
+  // Calendar event labels for the day `date`. Throws if not connected.
+  async function fetchCalendarLabels(date) {
+    const evs = await api.gcalEvents(date.toISOString(), addDays(date, 1).toISOString());
+    return evs.map(eventLabel);
+  }
+
+  // Markdown for a new list: recurring items for that weekday, plus calendar
+  // events if Google Calendar is connected (silently skipped otherwise).
+  async function seedFor(name) {
+    const date = parseListDate(name);
+    if (!date) return '';
+    const labels = recurringItems(recurring, date);
+    try {
+      for (const l of await fetchCalendarLabels(date)) if (!labels.includes(l)) labels.push(l);
+    } catch { /* not connected / offline */ }
+    return toMd(labels.map((label, i) => ({ id: i + 1, label, checked: false })));
+  }
+
+  async function importCalendar() {
+    const date = activeList && parseListDate(activeList);
+    if (!date) return;
+    try {
+      const status = await api.gcalStatus();
+      if (!status.configured) return toast('Add data/google-credentials.json first (see server.js)');
+      if (!status.connected) {
+        window.open(`/gcal/start?token=password`, '_blank');
+        return toast('Authorize in the new tab, then import again');
+      }
+      const have = new Set(items.map((i) => i.label));
+      const fresh = (await fetchCalendarLabels(date)).filter((l) => !have.has(l));
+      if (!fresh.length) return toast('Nothing new on your calendar');
+      let id = items.reduce((m, i) => Math.max(m, i.id), 0);
+      const next = [...items, ...fresh.map((label) => ({ id: ++id, label, checked: false }))];
+      setItems(next);
+      await persist(next);
+      toast(`Imported ${fresh.length} event${fresh.length === 1 ? '' : 's'}`);
+    } catch (e) {
+      toast('Calendar error: ' + e.message);
+    }
+  }
+
+  function stepDay(n) {
+    const date = activeList && parseListDate(activeList);
+    if (date) selectOrCreateList(formatListName(addDays(date, n)));
+  }
+
+  async function changeRecurring(next) {
+    setRecurring(next);
+    try {
+      await api.putRecurring(next);
+    } catch (e) {
+      toast('Recurring save error: ' + e.message);
+    }
+  }
+
   // Switch to `name`, creating an empty list for it first if it doesn't exist yet.
   async function selectOrCreateList(name) {
     setCalendarOpen(false);
@@ -148,7 +207,7 @@ export default function App() {
       return;
     }
     try {
-      await api.put(name, '');
+      await api.put(name, await seedFor(name));
       setLists((prev) => [...prev, name]);
       await switchList(name);
     } catch (e) {
@@ -194,6 +253,10 @@ export default function App() {
 
   const listStatus = status === 'ready' && !activeList ? 'no-lists' : status;
 
+  if (graphOpen) {
+    return <GraphPage lists={lists} metaByName={allMeta} onBack={() => setGraphOpen(false)} />;
+  }
+
   return (
     <>
       <Header
@@ -202,11 +265,16 @@ export default function App() {
         hasActiveList={!!activeList}
         countsOpen={countsOpen}
         calendarOpen={calendarOpen}
-        trendsOpen={trendsOpen}
+        recurringOpen={recurringOpen}
+        onPrevDay={() => stepDay(-1)}
+        onNextDay={() => stepDay(1)}
+        onGoToday={() => selectOrCreateList(todayKey())}
+        onImportCalendar={importCalendar}
+        onToggleRecurring={() => setRecurringOpen((v) => !v)}
         onRefresh={handleRefresh}
         onToggleCounts={() => setCountsOpen((v) => !v)}
         onToggleCalendar={() => setCalendarOpen((v) => !v)}
-        onToggleTrends={() => setTrendsOpen((v) => !v)}
+        onOpenGraph={() => setGraphOpen(true)}
         onDeleteList={handleDeleteList}
       />
 
@@ -232,11 +300,11 @@ export default function App() {
         onClose={() => setCountsOpen(false)}
       />
 
-      <TrendsPanel
-        open={trendsOpen}
-        lists={lists}
-        metaByName={allMeta}
-        onClose={() => setTrendsOpen(false)}
+      <RecurringPanel
+        open={recurringOpen}
+        items={recurring}
+        onChange={changeRecurring}
+        onClose={() => setRecurringOpen(false)}
       />
 
       <AddRow value={newItemValue} onChange={setNewItemValue} onSubmit={addItem} disabled={!activeList} />

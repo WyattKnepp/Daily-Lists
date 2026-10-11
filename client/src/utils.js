@@ -77,3 +77,16 @@ export function pickDefault(names) {
   if (dated.length) return dated[dated.length - 1].n;
   return names[0];
 }
+
+export const DAY_LABELS = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa'];
+
+// Markdown for a brand-new list: recurring items due on `date`'s weekday.
+export function recurringItems(recurring, date) {
+  return recurring.filter((r) => r.days.includes(date.getDay())).map((r) => r.label);
+}
+
+export function eventLabel(ev) {
+  if (!ev.start) return ev.title;
+  const t = new Date(ev.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return `${t} ${ev.title}`;
+}

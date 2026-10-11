@@ -16,13 +16,21 @@ frontend built with Vite.
   - `client/src/utils.js` — markdown parse/serialize + date helpers
     (`todayKey`, `pickDefault`) shared with the backend's file-naming
     convention.
-  - `client/src/components/` — `Header`, `CalendarPanel`, `ProgressBar`,
-    `ItemList`, `CountsPanel`, `TrendsPanel`, `AddRow`, `Toast`.
+  - `client/src/components/` — `Header` (date + prev/next-day chevrons;
+    quick buttons Refresh / Today / Counts; a ⋮ overflow menu holding
+    Calendar, Graph, Recurring items, Import Google Calendar, Delete list), `CalendarPanel`, `ProgressBar`, `ItemList`,
+    `CountsPanel`, `RecurringPanel` (bottom sheet), `GraphPage` (full page,
+    replaces the old `TrendsPanel` sheet), `AddRow`, `Toast`.
+  - Navigation is a `graphOpen` boolean in `App.jsx` (no router): when true
+    the app renders `GraphPage` instead of the list view.
+- `data/` — gitignored, created on server start. `recurring.json`
+  (recurring items), `google-credentials.json` (OAuth client, you supply),
+  `google-token.json` (refresh token, written after authorizing).
 - `lists/` — one markdown file per checklist (e.g. `9-22-26.md`), lines like
   `- [x] done item` / `- [ ] todo item`. Gitignored — personal data, never
   committed. Created automatically on server start if missing.
 - Per-list metadata (`lists/<name>.json`) stores the counters shown in the
-  counts panel and charted in the trends panel. The category set/order lives
+  counts panel and charted on the graph page. The category set/order lives
   in one place, `client/src/utils.js` (`COUNT_CATEGORIES`, currently
   `MM, DO, AL, WD, PA`) — the backend is category-agnostic, it just
   reads/writes whatever object the client sends, so adding or renaming a
@@ -41,6 +49,33 @@ exposed publicly).
 - `GET /meta/:name` / `PUT /meta/:name` — one list's counters, `{cat: n, ...}`
 - `GET /meta` — every list's counters at once, keyed by list name; used by
   the trends chart so it doesn't issue one request per day in range
+- `GET/PUT /recurring` — recurring items, `[{id, label, days: [0..6]}]`
+  (`days` follow `Date.getDay()`, 0 = Sunday)
+- `GET /gcal/status` — `{configured, connected}`
+- `GET /gcal/events?timeMin=ISO&timeMax=ISO` — primary-calendar events
+  (`{title, start}`, `start` null for all-day)
+- `GET /gcal/start?token=password` and `GET /gcal/callback` — OAuth flow.
+  These sit *before* the auth middleware because browser redirects can't send
+  `x-token`; `/gcal/start` checks `?token=` itself.
+
+## Features
+
+- **Prev/next day**: chevrons right of the date in the header; stepping to a
+  day with no list creates it.
+- **Recurring items**: managed in `RecurringPanel` (item + `su..sa` toggle
+  buttons). Applied only when a *new* list is created (`seedFor` in
+  `App.jsx`), never to existing lists.
+- **Graph page**: full page; legend chips toggle which `COUNT_CATEGORIES`
+  are plotted.
+- **Google Calendar**: read-only OAuth (`calendar.readonly`, primary
+  calendar). Setup: create an OAuth "Web application" client, enable the
+  Calendar API, add `http://localhost:3001/gcal/callback` as a redirect URI,
+  save `{"client_id","client_secret"}` to `data/google-credentials.json`
+  (or set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`), then click the header
+  import button to authorize. Google rejects plain-IP `http` redirects, so
+  authorize locally and copy `data/google-token.json` to the droplet. New
+  lists auto-import events once connected; the import button adds events not
+  already on the list (matched by label).
 
 ## Running it
 
@@ -48,7 +83,7 @@ exposed publicly).
 
 ```
 node server.js          # API on :3001
-cd client && npm run dev  # Vite dev server, proxies /lists,/list,/meta to :3001
+cd client && npm run dev  # Vite dev server, proxies /lists,/list,/meta,/recurring,/gcal to :3001
 ```
 
 Open the Vite dev URL it prints (usually `http://localhost:5173`).
@@ -75,7 +110,7 @@ the frontend always calls whatever origin served it.
   `lists/` folder instead. No config differences, no per-environment edits.
 - In `vite dev` mode specifically, the frontend is served by Vite's own dev
   server on a different port, so `vite.config.js` proxies `/lists`,
-  `/list`, and `/meta` to `http://localhost:3001` — that's the one place
+  `/list`, `/meta`, `/recurring`, and `/gcal` to `http://localhost:3001` — that's the one place
   the backend's location is still named, and only for local development.
 
 **How the droplet keeps the server running (systemd/pm2/tmux/cron) is not
