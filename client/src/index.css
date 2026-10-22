@@ -9,6 +9,8 @@
   --text:        #b8ffb8;
   --muted:       #2e6b2e;
   --danger:      #ff3c3c;
+  --move:        #ffd23f;
+  --move-dim:    #5c4a0a;
   --glow:        0 0 8px rgba(0,255,65,0.45);
   --glow-sm:     0 0 4px rgba(0,255,65,0.3);
   --safe-top:    env(safe-area-inset-top, 0px);
@@ -363,6 +365,15 @@ main {
 }
 
 .item.checked .item-label { color: var(--muted); text-decoration: line-through; }
+
+/* Move mode: arrow replaces the checkbox; moved items are yellow. */
+.move-arrow { color: var(--text); border-color: var(--muted); }
+.item.movable:hover { border-color: var(--move-dim); box-shadow: none; }
+.item.moved,
+.item.moved:hover { border-color: var(--move); box-shadow: 0 0 4px rgba(255, 210, 63, 0.25); }
+.item.moved .item-label { color: var(--move); }
+.item.moved .move-arrow { color: var(--move); border-color: var(--move); }
+.item.moved:not(.movable) { cursor: default; }
 
 .del-btn {
   flex-shrink: 0;
@@ -781,6 +792,24 @@ button.add-btn {
 }
 
 button.add-btn:active { opacity: 0.8; transform: scale(0.96); }
+button.end-move-btn {
+  flex: 1;
+  background: var(--move);
+  color: #000;
+  border: 0;
+  border-radius: 3px;
+  padding: 14px 18px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(255, 210, 63, 0.35);
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+button.end-move-btn:active { opacity: 0.85; transform: scale(0.98); }
+
 button.add-btn:disabled { opacity: 0.2; pointer-events: none; box-shadow: none; text-shadow: none; }
 
 /* ── Date nav ── */

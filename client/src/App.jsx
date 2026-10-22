@@ -19,6 +19,7 @@ export default function App() {
   const [countsOpen, setCountsOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [graphOpen, setGraphOpen] = useState(false);
+  const [moveMode, setMoveMode] = useState(false);
   const [recurring, setRecurring] = useState([]);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [allMeta, setAllMeta] = useState(null);
@@ -29,6 +30,14 @@ export default function App() {
   const toastTimer = useRef(null);
   const mainRef = useRef(null);
   const justAdded = useRef(false);
+  // Latest list/items for moveItem, which runs queued after earlier moves.
+  const activeListRef = useRef(activeList);
+  activeListRef.current = activeList;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const listsRef = useRef(lists);
+  listsRef.current = lists;
+  const moveQueue = useRef(Promise.resolve());
 
   const dateLabel = useMemo(() => {
     const date = activeList && parseListDate(activeList);
@@ -111,6 +120,7 @@ export default function App() {
   }
 
   async function toggleItem(id) {
+    if (items.find((i) => i.id === id)?.moved) return; // only changed via move mode
     const next = items.map((i) => (i.id === id ? { ...i, checked: !i.checked } : i));
     setItems(next);
     await persist(next);
@@ -131,6 +141,67 @@ export default function App() {
     setItems(next);
     setNewItemValue('');
     await persist(next);
+  }
+
+  // Move mode: send an unchecked item to the day after the viewed list, or
+  // undo a previous move. Queued so rapid taps don't race each other's writes.
+  function moveItem(id) {
+    moveQueue.current = moveQueue.current.then(() => moveOrRestore(id));
+  }
+
+  async function moveOrRestore(id) {
+    const name = activeListRef.current;
+    const cur = itemsRef.current;
+    const item = cur.find((i) => i.id === id);
+    const date = name && parseListDate(name);
+    if (!item || item.checked) return;
+    if (!date) return toast('Moving needs a dated list');
+    const nextName = formatListName(addDays(date, 1));
+    const exists = listsRef.current.includes(nextName);
+
+    // 1. Next day's list: append a copy, or remove the last unchecked copy.
+    // `wrote` holds its prior markdown so step 2 can roll it back.
+    let wrote = null;
+    try {
+      if (!item.moved) {
+        const md = exists ? await api.get(nextName) : await seedFor(nextName);
+        const nextItems = parseMd(md);
+        const maxId = nextItems.reduce((m, i) => Math.max(m, i.id), 0);
+        nextItems.push({ id: maxId + 1, label: item.label, checked: false, moved: false });
+        await api.put(nextName, toMd(nextItems));
+        wrote = md;
+        if (!exists) {
+          listsRef.current = [...listsRef.current, nextName];
+          setLists((prev) => (prev.includes(nextName) ? prev : [...prev, nextName]));
+        }
+      } else if (exists) {
+        const md = await api.get(nextName);
+        const nextItems = parseMd(md);
+        const idx = nextItems.findLastIndex((i) => !i.checked && !i.moved && i.label === item.label);
+        if (idx !== -1) {
+          nextItems.splice(idx, 1);
+          await api.put(nextName, toMd(nextItems));
+          wrote = md;
+        }
+      }
+    } catch (e) {
+      return toast(`Move error (${nextName}): ${e.message}`);
+    }
+
+    // 2. This list: flip the moved marker. On failure, roll back step 1.
+    const next = cur.map((i) => (i.id === id ? { ...i, moved: !i.moved } : i));
+    try {
+      await api.put(name, toMd(next));
+    } catch (e) {
+      try {
+        if (wrote !== null) await api.put(nextName, wrote);
+      } catch {
+        return toast(`Save error — ${nextName} may now be out of sync: ${e.message}`);
+      }
+      return toast('Save error, move undone: ' + e.message);
+    }
+    itemsRef.current = next;
+    if (activeListRef.current === name) setItems(next);
   }
 
   async function adjustCount(cat, delta) {
@@ -275,6 +346,8 @@ export default function App() {
         onToggleCounts={() => setCountsOpen((v) => !v)}
         onToggleCalendar={() => setCalendarOpen((v) => !v)}
         onOpenGraph={() => setGraphOpen(true)}
+        moveMode={moveMode}
+        onToggleMoveMode={() => setMoveMode((v) => !v)}
         onDeleteList={handleDeleteList}
       />
 
@@ -287,10 +360,17 @@ export default function App() {
         />
       )}
 
-      {status === 'ready' && activeList && <ProgressBar done={items.filter((i) => i.checked).length} total={items.length} />}
+      {status === 'ready' && activeList && <ProgressBar done={items.filter((i) => i.checked).length} total={items.filter((i) => !i.moved).length} />}
 
       <main ref={mainRef}>
-        <ItemList status={listStatus} items={items} onToggle={toggleItem} onDelete={removeItem} />
+        <ItemList
+          status={listStatus}
+          items={items}
+          moveMode={moveMode}
+          onToggle={toggleItem}
+          onMove={moveItem}
+          onDelete={removeItem}
+        />
       </main>
 
       <CountsPanel
@@ -307,7 +387,15 @@ export default function App() {
         onClose={() => setRecurringOpen(false)}
       />
 
-      <AddRow value={newItemValue} onChange={setNewItemValue} onSubmit={addItem} disabled={!activeList} />
+      {moveMode ? (
+        <div className="add-row">
+          <button className="end-move-btn" onClick={() => setMoveMode(false)}>
+            End move mode
+          </button>
+        </div>
+      ) : (
+        <AddRow value={newItemValue} onChange={setNewItemValue} onSubmit={addItem} disabled={!activeList} />
+      )}
 
       <Toast message={toastMsg} />
     </>

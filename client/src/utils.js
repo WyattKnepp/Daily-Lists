@@ -15,16 +15,18 @@ export function emptyCounts() {
   return Object.fromEntries(COUNT_CATEGORIES.map((c) => [c, 0]));
 }
 
+// `- [x]` done, `- [ ]` todo, `- [>]` moved to the next day (neither done
+// nor todo — excluded from progress).
 export function parseMd(md) {
   let id = 0;
   return md
     .split('\n')
-    .filter((l) => /^- \[[ x]\] /.test(l))
-    .map((l) => ({ id: ++id, checked: l[3] === 'x', label: l.slice(6) }));
+    .filter((l) => /^- \[[ x>]\] /.test(l))
+    .map((l) => ({ id: ++id, checked: l[3] === 'x', moved: l[3] === '>', label: l.slice(6) }));
 }
 
 export function toMd(items) {
-  return items.map((i) => `- [${i.checked ? 'x' : ' '}] ${i.label}`).join('\n');
+  return items.map((i) => `- [${i.checked ? 'x' : i.moved ? '>' : ' '}] ${i.label}`).join('\n');
 }
 
 export function formatListName(date) {

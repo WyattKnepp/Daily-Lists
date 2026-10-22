@@ -18,7 +18,8 @@ frontend built with Vite.
     convention.
   - `client/src/components/` — `Header` (date + prev/next-day chevrons;
     quick buttons Refresh / Today / Counts; a ⋮ overflow menu holding
-    Calendar, Graph, Recurring items, Import Google Calendar, Delete list), `CalendarPanel`, `ProgressBar`, `ItemList`,
+    Calendar, Graph, Recurring items, Move to next day, Import Google
+    Calendar, Delete list), `CalendarPanel`, `ProgressBar`, `ItemList`,
     `CountsPanel`, `RecurringPanel` (bottom sheet), `GraphPage` (full page,
     replaces the old `TrendsPanel` sheet), `AddRow`, `Toast`.
   - Navigation is a `graphOpen` boolean in `App.jsx` (no router): when true
@@ -27,8 +28,11 @@ frontend built with Vite.
   (recurring items), `google-credentials.json` (OAuth client, you supply),
   `google-token.json` (refresh token, written after authorizing).
 - `lists/` — one markdown file per checklist (e.g. `9-22-26.md`), lines like
-  `- [x] done item` / `- [ ] todo item`. Gitignored — personal data, never
-  committed. Created automatically on server start if missing.
+  `- [x] done item` / `- [ ] todo item` / `- [>] moved item` (sent to the
+  next day via move mode; neither done nor todo, excluded from progress).
+  Parsed into `{id, label, checked, moved}` by `parseMd`/`toMd`.
+  Gitignored — personal data, never committed. Created automatically on
+  server start if missing.
 - Per-list metadata (`lists/<name>.json`) stores the counters shown in the
   counts panel and charted on the graph page. The category set/order lives
   in one place, `client/src/utils.js` (`COUNT_CATEGORIES`, currently
@@ -65,6 +69,17 @@ exposed publicly).
 - **Recurring items**: managed in `RecurringPanel` (item + `su..sa` toggle
   buttons). Applied only when a *new* list is created (`seedFor` in
   `App.jsx`), never to existing lists.
+- **Move mode** (⋮ → Move to next day; `moveMode` in `App.jsx`): unchecked
+  items show an arrow instead of a checkbox, and `AddRow` is replaced by a
+  yellow "End move mode" button. Tapping an arrow appends the item (unchecked,
+  duplicates allowed) to the day *after the viewed list*, creating that list via
+  `seedFor` if missing, and marks the original `[>]` (yellow outline/text).
+  Tapping a moved item in move mode undoes it: it removes the last unchecked
+  same-label copy from the next day (if any) and clears the marker. Writes go
+  next day first, then the current list; if the second write fails, the first
+  is rolled back. Moves are queued (`moveQueue`) so rapid taps don't race.
+  Outside move mode, moved items are inert (can't be checked). Manual only:
+  no automatic carry-over.
 - **Graph page**: full page; legend chips toggle which `COUNT_CATEGORIES`
   are plotted.
 - **Google Calendar**: read-only OAuth (`calendar.readonly`, primary

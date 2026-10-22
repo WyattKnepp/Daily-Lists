@@ -22,6 +22,9 @@ const ICONS = {
       <path d="M7 5.5v5M4.8 8.5 7 10.7l2.2-2.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
     </>
   ),
+  move: (
+    <path d="M1 7h10.5M8 3.5 11.5 7 8 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+  ),
   trash: (
     <path
       d="M1 3.5h12M5 3.5V2.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1M11.5 3.5l-.8 8.5a1 1 0 0 1-1 .9H4.3a1 1 0 0 1-1-.9L2.5 3.5"
@@ -56,6 +59,8 @@ export default function Header({
   onToggleCounts,
   onToggleCalendar,
   onOpenGraph,
+  moveMode,
+  onToggleMoveMode,
   onDeleteList,
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -154,6 +159,11 @@ export default function Header({
               <button role="menuitem" className={recurringOpen ? 'active' : ''} onClick={pick(onToggleRecurring)}>
                 <Icon name="recurring" /> Recurring items
               </button>
+              {hasActiveList && (
+                <button role="menuitem" className={moveMode ? 'active' : ''} onClick={pick(onToggleMoveMode)}>
+                  <Icon name="move" /> {moveMode ? 'End move mode' : 'Move to next day'}
+                </button>
+              )}
               {hasActiveList && (
                 <button role="menuitem" onClick={pick(onImportCalendar)}>
                   <Icon name="import" /> Import Google Calendar
