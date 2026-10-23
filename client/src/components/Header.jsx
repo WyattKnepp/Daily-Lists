@@ -62,6 +62,7 @@ export default function Header({
   moveMode,
   onToggleMoveMode,
   onDeleteList,
+  gcalFailures = [],
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -142,6 +143,7 @@ export default function Header({
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
           >
+            {gcalFailures.length > 0 && <span className="menu-alert-dot" aria-label="Calendar warnings" />}
             <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
               <circle cx="7" cy="2.5" r="1.3" />
               <circle cx="7" cy="7" r="1.3" />
@@ -150,6 +152,17 @@ export default function Header({
           </button>
           {menuOpen && (
             <div className="menu-dropdown" role="menu">
+              {gcalFailures.length > 0 && (
+                <div className="menu-warning">
+                  <div className="menu-warning-title">Calendars not imported</div>
+                  {gcalFailures.map((f) => (
+                    <div key={f.id} className="menu-warning-item">
+                      <span className="menu-warning-id">{f.id}</span>
+                      <span>{f.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <button role="menuitem" onClick={pick(onToggleCalendar)}>
                 <Icon name="calendar" /> Calendar
               </button>

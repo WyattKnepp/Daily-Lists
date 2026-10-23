@@ -25,8 +25,8 @@ frontend built with Vite.
   - Navigation is a `graphOpen` boolean in `App.jsx` (no router): when true
     the app renders `GraphPage` instead of the list view.
 - `data/` — gitignored, created on server start. `recurring.json`
-  (recurring items), `google-credentials.json` (OAuth client, you supply),
-  `google-token.json` (refresh token, written after authorizing).
+  (recurring items), `calendars.json` (optional extra Google calendar IDs,
+  you write it by hand — see Google Calendar below).
 - `lists/` — one markdown file per checklist (e.g. `9-22-26.md`), lines like
   `- [x] done item` / `- [ ] todo item` / `- [>] moved item` (sent to the
   next day via move mode; neither done nor todo, excluded from progress).
@@ -55,20 +55,29 @@ exposed publicly).
   the trends chart so it doesn't issue one request per day in range
 - `GET/PUT /recurring` — recurring items, `[{id, label, days: [0..6]}]`
   (`days` follow `Date.getDay()`, 0 = Sunday)
-- `GET /gcal/status` — `{configured, connected}`
-- `GET /gcal/events?timeMin=ISO&timeMax=ISO` — primary-calendar events
-  (`{title, start}`, `start` null for all-day)
-- `GET /gcal/start?token=password` and `GET /gcal/callback` — OAuth flow.
-  These sit *before* the auth middleware because browser redirects can't send
-  `x-token`; `/gcal/start` checks `?token=` itself.
+- `GET /gcal/status` — `{configured, connected, failures: [{id, reason}]}`;
+  `failures` lists extra calendars that failed on the latest events fetch (or
+  one `calendars.json` entry if that file is invalid) — drives the ⋮ red dot
+- `GET /gcal/events?timeMin=ISO&timeMax=ISO` — events from the primary
+  calendar plus every calendar in `data/calendars.json`, merged and sorted
+  (all-day first, then by start); `{title, start}`, `start` null for all-day.
+  A failing extra calendar is skipped (logged, recorded in `failures`); only a
+  primary failure fails the request (500)
+- The client still has a leftover `window.open('/gcal/start…')` in
+  `importCalendar` from the old OAuth flow; that route no longer exists.
 
 ## Features
 
 - **Prev/next day**: chevrons right of the date in the header; stepping to a
   day with no list creates it.
 - **Recurring items**: managed in `RecurringPanel` (item + `su..sa` toggle
-  buttons). Applied only when a *new* list is created (`seedFor` in
-  `App.jsx`), never to existing lists.
+  buttons). Applied when a *new* list is created (`seedFor` in `App.jsx`).
+  On existing lists, the header's Refresh button reloads the list, then
+  appends (unchecked, at the bottom) any of *that list's* weekday's recurring
+  items whose label isn't already on it in any state (`[ ]`/`[x]`/`[>]`,
+  exact match like the gcal import), saves once, and toasts the count.
+  Recurring items are refetched on each Refresh. A deleted recurring item
+  comes back on Refresh (no tombstones). Refresh waits behind `moveQueue`.
 - **Move mode** (⋮ → Move to next day; `moveMode` in `App.jsx`): unchecked
   items show an arrow instead of a checkbox, and `AddRow` is replaced by a
   yellow "End move mode" button. Tapping an arrow appends the item (unchecked,
@@ -82,15 +91,43 @@ exposed publicly).
   no automatic carry-over.
 - **Graph page**: full page; legend chips toggle which `COUNT_CATEGORIES`
   are plotted.
-- **Google Calendar**: read-only OAuth (`calendar.readonly`, primary
-  calendar). Setup: create an OAuth "Web application" client, enable the
-  Calendar API, add `http://localhost:3001/gcal/callback` as a redirect URI,
-  save `{"client_id","client_secret"}` to `data/google-credentials.json`
-  (or set `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`), then click the header
-  import button to authorize. Google rejects plain-IP `http` redirects, so
-  authorize locally and copy `data/google-token.json` to the droplet. New
-  lists auto-import events once connected; the import button adds events not
-  already on the list (matched by label).
+- **Google Calendar**: read-only, via a **service account**
+  (`calendar.readonly`). Key file at `GOOGLE_SA_KEYFILE` (default
+  `/home/openclaw/.openclaw/workspace/.credentials/google-service-account.json`);
+  the primary calendar is `GOOGLE_CALENDAR_ID` (default
+  `wyattjoeknepp@gmail.com`), which must be shared with the service account's
+  `client_email`. New lists auto-import events; the ⋮ → Import Google Calendar
+  button adds events whose label isn't already on the list (an event on two
+  calendars is added once).
+  - **Extra calendars**: `data/calendars.json`, a JSON array of calendar ID
+    strings (`{"calendars": [...]}` is also accepted, but the array is
+    canonical):
+    ```json
+    ["abc123@group.calendar.google.com", "family0123@group.calendar.google.com"]
+    ```
+    Primary is always included; listing `"primary"` or the primary ID again
+    is de-duplicated. Missing file = primary only, no warning. Re-read on
+    every fetch, so edits apply without a restart. Events look identical
+    regardless of source calendar (no label/color).
+  - **Finding a calendar ID**: Google Calendar on the web → hover the calendar
+    in the left sidebar → ⋮ → **Settings and sharing** → scroll to
+    **Integrate calendar** → copy **Calendar ID** (usually
+    `...@group.calendar.google.com`). In the same settings page, under
+    **Share with specific people**, add the service account's `client_email`
+    (from the key file) — otherwise that calendar fails with "no access".
+  - `data/` isn't synced by git: **create `data/calendars.json` on the
+    droplet too**.
+  - **Red-dot warning**: if any extra calendar fails (not found, no access,
+    network error…) the server logs it, still imports the rest, and keeps
+    the failures in memory (`lastCalendarFailures` in `server.js`).
+    `/gcal/status` returns them; the client fetches it on load and after every
+    events fetch, shows a red dot on the header ⋮ button, and lists each
+    failing ID + reason at the top of the menu. It reflects the latest fetch:
+    it clears once the calendar works again, and immediately once the ID is
+    removed from `calendars.json` (status filters to IDs still configured).
+    An invalid `calendars.json` (bad JSON / wrong shape) shows as a
+    "calendars.json is invalid: …" warning while primary still imports.
+    No manual dismiss. Failures reset on server restart until the next fetch.
 
 ## Running it
 

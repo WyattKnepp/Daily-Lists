@@ -82,7 +82,8 @@ export function pickDefault(names) {
 
 export const DAY_LABELS = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa'];
 
-// Markdown for a brand-new list: recurring items due on `date`'s weekday.
+// Labels of recurring items due on `date`'s weekday, in recurring.json order.
+// Shared by seedFor (new lists) and Refresh (existing lists).
 export function recurringItems(recurring, date) {
   return recurring.filter((r) => r.days.includes(date.getDay())).map((r) => r.label);
 }

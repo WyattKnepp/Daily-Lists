@@ -21,6 +21,8 @@ export default function App() {
   const [graphOpen, setGraphOpen] = useState(false);
   const [moveMode, setMoveMode] = useState(false);
   const [recurring, setRecurring] = useState([]);
+  // Extra calendars (data/calendars.json) that failed on the latest fetch: [{id, reason}].
+  const [gcalFailures, setGcalFailures] = useState([]);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [allMeta, setAllMeta] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | no-api | no-lists
@@ -82,8 +84,13 @@ export default function App() {
     }
   }
 
+  function refreshGcalFailures() {
+    api.gcalStatus().then((s) => setGcalFailures(s.failures || [])).catch(() => {});
+  }
+
   useEffect(() => {
     api.getRecurring().then(setRecurring).catch(() => {});
+    refreshGcalFailures();
     loadLists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -217,8 +224,12 @@ export default function App() {
 
   // Calendar event labels for the day `date`. Throws if not connected.
   async function fetchCalendarLabels(date) {
-    const evs = await api.gcalEvents(date.toISOString(), addDays(date, 1).toISOString());
-    return evs.map(eventLabel);
+    try {
+      const evs = await api.gcalEvents(date.toISOString(), addDays(date, 1).toISOString());
+      return evs.map(eventLabel);
+    } finally {
+      refreshGcalFailures();
+    }
   }
 
   // Markdown for a new list: recurring items for that weekday, plus calendar
@@ -244,7 +255,8 @@ export default function App() {
         return toast('Authorize in the new tab, then import again');
       }
       const have = new Set(items.map((i) => i.label));
-      const fresh = (await fetchCalendarLabels(date)).filter((l) => !have.has(l));
+      // Set-dedupe too: an event on two calendars arrives twice.
+      const fresh = [...new Set(await fetchCalendarLabels(date))].filter((l) => !have.has(l));
       if (!fresh.length) return toast('Nothing new on your calendar');
       let id = items.reduce((m, i) => Math.max(m, i.id), 0);
       const next = [...items, ...fresh.map((label) => ({ id: ++id, label, checked: false }))];
@@ -314,11 +326,54 @@ export default function App() {
     }
   }
 
+  // Reload the viewed list, then append any of its weekday's recurring items
+  // not already on it (matched by label, any state). Queued behind moveQueue
+  // so it never races a pending move's writes.
   async function handleRefresh() {
-    if (activeList) {
-      await switchList(activeList);
-    } else {
-      await loadLists();
+    if (!activeList) return loadLists();
+    const name = activeList;
+    const run = moveQueue.current.then(() => refreshList(name));
+    moveQueue.current = run;
+    await run;
+  }
+
+  async function refreshList(name) {
+    setStatus('loading');
+    try {
+      const [md, meta, rec] = await Promise.all([
+        api.get(name),
+        api.getMeta(name),
+        api.getRecurring().catch(() => null),
+      ]);
+      let next = parseMd(md);
+      const date = parseListDate(name);
+      const have = new Set(next.map((i) => i.label));
+      const fresh = [];
+      if (rec) {
+        setRecurring(rec);
+        if (date) for (const l of recurringItems(rec, date)) if (!have.has(l)) { have.add(l); fresh.push(l); }
+      }
+      if (fresh.length) {
+        let id = next.reduce((m, i) => Math.max(m, i.id), 0);
+        const withFresh = [...next, ...fresh.map((label) => ({ id: ++id, label, checked: false, moved: false }))];
+        try {
+          await api.put(name, toMd(withFresh));
+          next = withFresh;
+        } catch (e) {
+          fresh.length = 0;
+          toast('Save error: ' + e.message);
+        }
+      }
+      if (activeListRef.current !== name) return;
+      itemsRef.current = next;
+      setItems(next);
+      setCounts({ ...emptyCounts(), ...meta });
+      setStatus('ready');
+      if (fresh.length) toast(`Added ${fresh.length} recurring item${fresh.length === 1 ? '' : 's'}`);
+    } catch (e) {
+      if (activeListRef.current !== name) return;
+      setStatus('error');
+      toast('Load error: ' + e.message);
     }
   }
 
@@ -349,6 +404,7 @@ export default function App() {
         moveMode={moveMode}
         onToggleMoveMode={() => setMoveMode((v) => !v)}
         onDeleteList={handleDeleteList}
+        gcalFailures={gcalFailures}
       />
 
       {calendarOpen && (

@@ -896,3 +896,30 @@ button.add-btn:disabled { opacity: 0.2; pointer-events: none; box-shadow: none; 
 }
 .menu-dropdown button:active, .menu-dropdown button.active { color: var(--accent); background: var(--bg); }
 .menu-dropdown button.danger { color: var(--danger); }
+
+/* Red dot on ⋮ when calendars in data/calendars.json failed on the last fetch */
+.menu-wrap .icon-btn { position: relative; }
+.menu-alert-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 4px rgba(255, 60, 60, 0.6);
+}
+.menu-warning {
+  margin: 2px 2px 6px;
+  padding: 8px 10px;
+  border: 1px solid #3a0f0f;
+  border-radius: 4px;
+  background: #0f0505;
+  font-size: 12px;
+  color: var(--text);
+  max-width: min(320px, calc(100vw - 48px));
+}
+.menu-warning-title { color: var(--danger); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+.menu-warning-item { display: flex; flex-direction: column; padding: 4px 0; }
+.menu-warning-item + .menu-warning-item { border-top: 1px solid #3a0f0f; }
+.menu-warning-id { color: var(--danger); overflow-wrap: anywhere; }
