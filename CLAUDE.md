@@ -149,6 +149,27 @@ npm start        # node server.js, serves client/dist + the API on :3001
 
 Open `http://<host>:3001/`.
 
+**Env overrides** (all optional, defaults = the behavior above): `PORT`
+(3001), `HOST` (`127.0.0.1`), `LISTS_DIR` (`./lists`, also honored by
+`migrate-counts.js`), `DATA_DIR` (`./data`). They exist so tests can run the
+real server against a temp dir on a free port.
+
+## Tests
+
+`node:test` suites in `tests/` (see `.claude/skills/test-report/SKILL.md`):
+
+```
+make -C /home/wyatt/Programs/Claude_Code_Pipeline test PROJECT=Daily-Lists
+```
+
+Writes `test-report.testreport` at the repo root. `tests/helpers/server.js`
+spawns `server.js` on a free port with temp `LISTS_DIR`/`DATA_DIR` and a
+nonexistent `GOOGLE_SA_KEYFILE`, so no test touches real data or Google.
+Covers the API, restart persistence, `client/src/utils.js` logic,
+`migrate-counts.js`, and a vite build into a temp dir. Known bugs are kept as
+`todo` tests (unvalidated list names allow path traversal; `PUT /list/:name`
+with no `content` returns a 500).
+
 ## Hosting — this is now the same everywhere
 
 Previously the frontend had the droplet's IP hardcoded as an absolute API

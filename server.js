@@ -3,12 +3,12 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const TOKEN = 'password';
-const LISTS_DIR = path.join(__dirname, 'lists');
+const LISTS_DIR = process.env.LISTS_DIR || path.join(__dirname, 'lists');
 const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
 
-const DATA_DIR = path.join(__dirname, 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 
 fs.mkdirSync(LISTS_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -212,4 +212,4 @@ app.get('/gcal/events', async (req, res) => {
   })));
 });
 
-app.listen(PORT, '127.0.0.1', () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, process.env.HOST || '127.0.0.1', () => console.log(`Server running on port ${PORT}`));

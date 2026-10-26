@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const LISTS_DIR = path.join(__dirname, 'lists');
+const LISTS_DIR = process.env.LISTS_DIR || path.join(__dirname, 'lists');
 const RENAME_MAP = { D: 'DO', A: 'AL', W: 'WD', P: 'PA' };
 const dryRun = process.argv.includes('--dry-run');
 

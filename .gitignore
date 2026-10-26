@@ -19,3 +19,6 @@ newspaper/*.md
 
 # Dev notes
 docs/
+# test-report (generated)
+test-report.testreport
+.test-results.xml
