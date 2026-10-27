@@ -93,3 +93,13 @@ export function eventLabel(ev) {
   const t = new Date(ev.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   return `${t} ${ev.title}`;
 }
+
+// Labels Refresh (and Import Google Calendar) should append to a list: first
+// `listDate`'s recurring items, then calendar event labels, skipping any label
+// already on the list in any state ([ ]/[x]/[>]) or already picked (an event
+// on two calendars arrives twice). No `listDate` (undated list) = events only.
+export function missingLabels(listItems, recurring, eventLabels, listDate) {
+  const have = new Set(listItems.map((i) => i.label));
+  const due = listDate ? recurringItems(recurring, listDate) : [];
+  return [...due, ...eventLabels].filter((l) => !have.has(l) && have.add(l));
+}

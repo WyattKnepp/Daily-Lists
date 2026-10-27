@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
-import { parseMd, toMd, todayKey, pickDefault, parseListDate, emptyCounts, addDays, formatListName, recurringItems, eventLabel } from './utils';
+import { parseMd, toMd, todayKey, pickDefault, parseListDate, emptyCounts, addDays, formatListName, recurringItems, eventLabel, missingLabels } from './utils';
 import Header from './components/Header';
 import CalendarPanel from './components/CalendarPanel';
 import ProgressBar from './components/ProgressBar';
@@ -40,6 +40,11 @@ export default function App() {
   const listsRef = useRef(lists);
   listsRef.current = lists;
   const moveQueue = useRef(Promise.resolve());
+  // Recurring saves, in order; Refresh waits on it so it never reads
+  // recurring.json while an edit is still in flight. `recurringEdits` counts
+  // edits so a refetch never overwrites a newer local change.
+  const recurringSave = useRef(Promise.resolve());
+  const recurringEdits = useRef(0);
 
   const dateLabel = useMemo(() => {
     const date = activeList && parseListDate(activeList);
@@ -116,6 +121,12 @@ export default function App() {
       mainRef.current?.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [items]);
+
+  // `items` plus `labels` appended as unchecked items.
+  function appendLabels(items, labels) {
+    let id = items.reduce((m, i) => Math.max(m, i.id), 0);
+    return [...items, ...labels.map((label) => ({ id: ++id, label, checked: false, moved: false }))];
+  }
 
   async function persist(nextItems) {
     if (!activeList) return;
@@ -254,12 +265,9 @@ export default function App() {
         window.open(`/gcal/start?token=password`, '_blank');
         return toast('Authorize in the new tab, then import again');
       }
-      const have = new Set(items.map((i) => i.label));
-      // Set-dedupe too: an event on two calendars arrives twice.
-      const fresh = [...new Set(await fetchCalendarLabels(date))].filter((l) => !have.has(l));
+      const fresh = missingLabels(items, [], await fetchCalendarLabels(date), date);
       if (!fresh.length) return toast('Nothing new on your calendar');
-      let id = items.reduce((m, i) => Math.max(m, i.id), 0);
-      const next = [...items, ...fresh.map((label) => ({ id: ++id, label, checked: false }))];
+      const next = appendLabels(items, fresh);
       setItems(next);
       await persist(next);
       toast(`Imported ${fresh.length} event${fresh.length === 1 ? '' : 's'}`);
@@ -273,13 +281,12 @@ export default function App() {
     if (date) selectOrCreateList(formatListName(addDays(date, n)));
   }
 
-  async function changeRecurring(next) {
+  function changeRecurring(next) {
     setRecurring(next);
-    try {
-      await api.putRecurring(next);
-    } catch (e) {
-      toast('Recurring save error: ' + e.message);
-    }
+    recurringEdits.current++;
+    recurringSave.current = recurringSave.current
+      .then(() => api.putRecurring(next))
+      .catch((e) => toast('Recurring save error: ' + e.message));
   }
 
   // Switch to `name`, creating an empty list for it first if it doesn't exist yet.
@@ -327,8 +334,9 @@ export default function App() {
   }
 
   // Reload the viewed list, then append any of its weekday's recurring items
-  // not already on it (matched by label, any state). Queued behind moveQueue
-  // so it never races a pending move's writes.
+  // and that day's calendar events not already on it (matched by label, any
+  // state), saving once. Queued behind moveQueue so it never races a pending
+  // move's writes. Silent on success; every failure toasts.
   async function handleRefresh() {
     if (!activeList) return loadLists();
     const name = activeList;
@@ -337,39 +345,49 @@ export default function App() {
     await run;
   }
 
+  // Calendar labels for Refresh: [] if Google isn't configured; throws if it
+  // is but the fetch fails.
+  async function refreshCalendarLabels(date) {
+    if (!date || !(await api.gcalStatus()).configured) return [];
+    return fetchCalendarLabels(date);
+  }
+
   async function refreshList(name) {
     setStatus('loading');
+    const date = parseListDate(name);
+    const errors = [];
     try {
-      const [md, meta, rec] = await Promise.all([
+      const edits = recurringEdits.current;
+      const [md, meta, rec, events] = await Promise.all([
         api.get(name),
         api.getMeta(name),
-        api.getRecurring().catch(() => null),
+        recurringSave.current.then(() => api.getRecurring()).catch((e) => {
+          errors.push('Recurring items error: ' + e.message);
+          return null;
+        }),
+        refreshCalendarLabels(date).catch((e) => {
+          errors.push('Calendar events could not be loaded: ' + e.message);
+          return [];
+        }),
       ]);
+      if (rec && recurringEdits.current === edits) setRecurring(rec);
       let next = parseMd(md);
-      const date = parseListDate(name);
-      const have = new Set(next.map((i) => i.label));
-      const fresh = [];
-      if (rec) {
-        setRecurring(rec);
-        if (date) for (const l of recurringItems(rec, date)) if (!have.has(l)) { have.add(l); fresh.push(l); }
-      }
+      const fresh = missingLabels(next, rec || [], events, date);
       if (fresh.length) {
-        let id = next.reduce((m, i) => Math.max(m, i.id), 0);
-        const withFresh = [...next, ...fresh.map((label) => ({ id: ++id, label, checked: false, moved: false }))];
+        const withFresh = appendLabels(next, fresh);
         try {
           await api.put(name, toMd(withFresh));
           next = withFresh;
         } catch (e) {
-          fresh.length = 0;
-          toast('Save error: ' + e.message);
+          errors.push('Save error: ' + e.message);
         }
       }
+      if (errors.length) toast(errors.join(' · '));
       if (activeListRef.current !== name) return;
       itemsRef.current = next;
       setItems(next);
       setCounts({ ...emptyCounts(), ...meta });
       setStatus('ready');
-      if (fresh.length) toast(`Added ${fresh.length} recurring item${fresh.length === 1 ? '' : 's'}`);
     } catch (e) {
       if (activeListRef.current !== name) return;
       setStatus('error');

@@ -72,12 +72,24 @@ exposed publicly).
   day with no list creates it.
 - **Recurring items**: managed in `RecurringPanel` (item + `su..sa` toggle
   buttons). Applied when a *new* list is created (`seedFor` in `App.jsx`).
-  On existing lists, the header's Refresh button reloads the list, then
-  appends (unchecked, at the bottom) any of *that list's* weekday's recurring
-  items whose label isn't already on it in any state (`[ ]`/`[x]`/`[>]`,
-  exact match like the gcal import), saves once, and toasts the count.
-  Recurring items are refetched on each Refresh. A deleted recurring item
-  comes back on Refresh (no tombstones). Refresh waits behind `moveQueue`.
+  On existing lists, the header's **Refresh** button reloads the list, then
+  appends (unchecked, at the bottom) *that list's* weekday's recurring items,
+  then that day's Google Calendar events (same range/labels as the import),
+  skipping any label already on it in any state (`[ ]`/`[x]`/`[>]`, exact
+  match), and saves once. The merge is `missingLabels` in `utils.js` (also
+  used by Import Google Calendar). No toast on success; a failed reload, save,
+  recurring fetch or calendar fetch toasts. Google not configured = events
+  skipped silently; configured but failing = recurring items still added +
+  error toast. Recurring items are refetched on each Refresh. Deleted
+  recurring items *and* deleted/renamed events come back on Refresh (no
+  tombstones). Refresh waits behind `moveQueue`.
+  - Recurring edits are saved through a serial queue (`recurringSave` in
+    `App.jsx`) and Refresh waits for it before `GET /recurring`. Root cause
+    of the old "new recurring item not added on Refresh" bug: saves were
+    fire-and-forget, so on a slow connection Refresh read `recurring.json`
+    before the new item/day toggle landed, added nothing, and then
+    overwrote the panel's state with the stale copy (the next edit would
+    re-save it, erasing the day). Saves could also land out of order.
 - **Move mode** (⋮ → Move to next day; `moveMode` in `App.jsx`): unchecked
   items show an arrow instead of a checkbox, and `AddRow` is replaced by a
   yellow "End move mode" button. Tapping an arrow appends the item (unchecked,
@@ -96,9 +108,9 @@ exposed publicly).
   `/home/openclaw/.openclaw/workspace/.credentials/google-service-account.json`);
   the primary calendar is `GOOGLE_CALENDAR_ID` (default
   `wyattjoeknepp@gmail.com`), which must be shared with the service account's
-  `client_email`. New lists auto-import events; the ⋮ → Import Google Calendar
-  button adds events whose label isn't already on the list (an event on two
-  calendars is added once).
+  `client_email`. New lists auto-import events; Refresh (see Recurring items
+  above) and the ⋮ → Import Google Calendar button add events whose label
+  isn't already on the list (an event on two calendars is added once).
   - **Extra calendars**: `data/calendars.json`, a JSON array of calendar ID
     strings (`{"calendars": [...]}` is also accepted, but the array is
     canonical):
